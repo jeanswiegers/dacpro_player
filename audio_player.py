@@ -2,14 +2,19 @@ import Adafruit_DHT
 import subprocess
 import time
 from datetime import datetime, timedelta
+import os
 
 # === CONFIGURATION ===
-AUDIO_FILE = "/home/pi/audio/loop.wav"
-LOG_FILE = "/home/pi/audio_player.log"
+# Automatically detect current script directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Full path to loop.wav inside ~/dacpro_player
+AUDIO_FILE = os.path.join(SCRIPT_DIR, "loop.wav")
+LOG_FILE = os.path.join(SCRIPT_DIR, "audio_player.log")
 
 DHT_SENSOR = Adafruit_DHT.DHT22
 DHT_PIN = 4  # GPIO4
-MAX_TEMP_C = 85
+MAX_TEMP_C = 85.0
 COOLDOWN_DURATION_MIN = 15
 CHECK_INTERVAL_SEC = 10
 
@@ -20,19 +25,19 @@ ACTIVE_HOURS = {"start": 7, "end": 17}
 cooling_until = None
 player = None
 
-def log(message):
+# === LOGGING FUNCTION ===
+def log(msg):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a") as f:
-        f.write(f"[{timestamp}] {message}\n")
-    print(f"[{timestamp}] {message}")
+        f.write(f"[{timestamp}] {msg}\n")
+    print(f"[{timestamp}] {msg}")
 
 def is_within_active_hours():
-    now = datetime.now()
-    hour = now.hour
+    hour = datetime.now().hour
     return hour >= ACTIVE_HOURS["start"] or hour < ACTIVE_HOURS["end"]
 
 def play_audio():
-    return subprocess.Popen(["mpv", "--loop", AUDIO_FILE])
+    return subprocess.Popen(["mpv", "--loop", AUDIO_FILE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def stop_audio():
     global player
@@ -41,52 +46,54 @@ def stop_audio():
         player.wait()
         log("🔇 Playback stopped.")
 
-def get_temperature():
+def get_sensor_data():
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
-    return temperature
+    return humidity, temperature
 
 # === MAIN LOOP ===
 try:
-    log("📼 Audio playback controller started.")
+    log("📼 Audio playback controller starting...")
 
     while True:
         now = datetime.now()
         active = is_within_active_hours()
 
+        humidity, temperature = get_sensor_data()
+
+        if humidity is not None and temperature is not None:
+            log(f"🌡️ Temp: {temperature:.1f}°C  💧 Humidity: {humidity:.1f}%")
+        else:
+            log("⚠️ Sensor read failed")
+
+        # Handle day-time shutdown
         if not active:
             stop_audio()
-            log("⏸️ Paused for daytime hours (07:00–17:00).")
+            log("⏸️ Paused during daytime hours (07:00–17:00)")
             time.sleep(CHECK_INTERVAL_SEC)
             continue
 
-        # Cooldown check
+        # Handle cooldown state
         if cooling_until and datetime.now() < cooling_until:
-            log(f"❄️ Cooling until {cooling_until.strftime('%H:%M:%S')}")
             stop_audio()
+            log(f"❄️ Cooling down until {cooling_until.strftime('%H:%M:%S')}")
             time.sleep(CHECK_INTERVAL_SEC)
             continue
         else:
             cooling_until = None
 
-        # Start playback if needed
+        # Start playback if not already running
         if not player or player.poll() is not None:
-            log("▶️ Starting audio playback.")
             player = play_audio()
+            log("▶️ Audio playback started.")
 
-        # Temperature check
-        temperature = get_temperature()
-        if temperature:
-            log(f"🌡️ Temp: {temperature:.1f}°C")
-            if temperature > MAX_TEMP_C:
-                log(f"🔥 Temp too high ({temperature:.1f}°C). Stopping playback for {COOLDOWN_DURATION_MIN} min.")
-                stop_audio()
-                cooling_until = datetime.now() + timedelta(minutes=COOLDOWN_DURATION_MIN)
+        # Handle high temperature
+        if temperature and temperature > MAX_TEMP_C:
+            stop_audio()
+            cooling_until = datetime.now() + timedelta(minutes=COOLDOWN_DURATION_MIN)
+            log(f"🔥 Temp exceeded {MAX_TEMP_C}°C — cooling for {COOLDOWN_DURATION_MIN} min.")
 
         time.sleep(CHECK_INTERVAL_SEC)
 
 except KeyboardInterrupt:
-    log("🔌 Script interrupted by user. Exiting...")
-    stop_audio()
-except Exception as e:
-    log(f"💥 Unexpected error: {e}")
+    log("🔌 Interrupted. Shutting down...")
     stop_audio()
