@@ -1,4 +1,5 @@
-import Adafruit_DHT
+import adafruit_dht
+import board
 import subprocess
 import time
 from datetime import datetime, timedelta
@@ -12,8 +13,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_FILE = os.path.join(SCRIPT_DIR, "loop.wav")
 LOG_FILE = os.path.join(SCRIPT_DIR, "audio_player.log")
 
-DHT_SENSOR = Adafruit_DHT.DHT22
-DHT_PIN = 4  # GPIO4
+# Initialize the sensor once at the top
+dht_device = adafruit_dht.DHT22(board.D4)
 MAX_TEMP_C = 85.0
 COOLDOWN_DURATION_MIN = 15
 CHECK_INTERVAL_SEC = 10
@@ -47,8 +48,13 @@ def stop_audio():
         log("🔇 Playback stopped.")
 
 def get_sensor_data():
-    humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
-    return humidity, temperature
+    try:
+        temperature = dht_device.temperature
+        humidity = dht_device.humidity
+        return humidity, temperature
+    except RuntimeError as error:
+        log(f"⚠️ Sensor read error: {error}")
+        return None, None
 
 # === MAIN LOOP ===
 try:
