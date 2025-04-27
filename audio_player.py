@@ -53,6 +53,9 @@ def get_sensor_data():
 try:
     log("📼 Audio playback controller starting...")
 
+    log("⏳ Waiting 5 minutes before starting...")
+    time.sleep(300)  # Sleep for 5 minutes
+
     while True:
         humidity, temperature = get_sensor_data()
 
