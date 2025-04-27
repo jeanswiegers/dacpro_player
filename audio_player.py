@@ -17,10 +17,7 @@ LOG_FILE = os.path.join(SCRIPT_DIR, "audio_player.log")
 dht_device = adafruit_dht.DHT22(board.D4)
 MAX_TEMP_C = 85.0
 COOLDOWN_DURATION_MIN = 15
-CHECK_INTERVAL_SEC = 10
-
-# Active hours: 7:00–17:00
-ACTIVE_HOURS = {"start": 7, "end": 17}
+CHECK_INTERVAL_SEC = 30
 
 # === STATE ===
 cooling_until = None
@@ -32,10 +29,6 @@ def log(msg):
     with open(LOG_FILE, "a") as f:
         f.write(f"[{timestamp}] {msg}\n")
     print(f"[{timestamp}] {msg}")
-
-def is_within_active_hours():
-    hour = datetime.now().hour
-    return hour >= ACTIVE_HOURS["start"] or hour < ACTIVE_HOURS["end"]
 
 def play_audio():
     return subprocess.Popen(["mpv", "--loop", AUDIO_FILE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -61,22 +54,12 @@ try:
     log("📼 Audio playback controller starting...")
 
     while True:
-        now = datetime.now()
-        active = is_within_active_hours()
-
         humidity, temperature = get_sensor_data()
 
         if humidity is not None and temperature is not None:
             log(f"🌡️ Temp: {temperature:.1f}°C  💧 Humidity: {humidity:.1f}%")
         else:
             log("⚠️ Sensor read failed")
-
-        # Handle day-time shutdown
-        if not active:
-            stop_audio()
-            log("⏸️ Paused during daytime hours (07:00–17:00)")
-            time.sleep(CHECK_INTERVAL_SEC)
-            continue
 
         # Handle cooldown state
         if cooling_until and datetime.now() < cooling_until:
